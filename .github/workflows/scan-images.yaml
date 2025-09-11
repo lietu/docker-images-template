@@ -1,0 +1,51 @@
+name: Security scan for images
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+  schedule:
+    # First day of every month, you know, for automatic updates etc.
+    - cron: "0 1 1 * *" # An hour after the normal builds
+  push:
+    branches:
+      - main
+
+env:
+  DOCKER_BUILDKIT: 1
+
+jobs:
+  build:
+    name: Build docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Dibber
+        run: pip install dibber
+
+      - name: Build images
+        run: dibber build --parallel 8
+
+      - name: List images
+        run: dibber list
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install trivy
+
+          # Update the DB so we can skip it later
+          trivy image --download-db-only
+
+      - name: Trivy security scan
+        run: dibber scan
